@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View, 
   Text, 
@@ -234,15 +234,21 @@ export default function App() {
     getProducts();
   }, []);
 
-  const renderProduct = ({ item }) => (
+  const renderProduct = ({ item }) => {
+  const { meta, ...product } = item;
+
+  return (
     <View style={styles.card}>
-      <Text style={styles.productId}>ID: {item.id}</Text>
-      <Text style={styles.productTitle}>{item.title}</Text>
-      <Text style={styles.price}>${item.price}</Text>
-      <Text style={styles.detail}>Category: {item.category}</Text>
-      <Text style={styles.detail}>Stock: {item.stock}</Text>
+      {Object.entries(product).map(([key, value]) => (
+        <Text key={key} style={styles.detail}>
+          {key}: {typeof value === 'object' && value !== null
+            ? JSON.stringify(value)
+            : String(value)}
+        </Text>
+      ))}
     </View>
   );
+};
 
   // Main render
   return ( 
