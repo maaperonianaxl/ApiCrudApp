@@ -1,23 +1,29 @@
-
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, 
-  Text, 
-  Button, 
-  FlatList, 
-  ActivityIndicator, 
-  TextInput, 
-  StyleSheet, 
+  View,
+  Text,
+  Button,
+  FlatList,
+  ActivityIndicator,
+  TextInput,
+  StyleSheet,
   ScrollView,
 } from 'react-native';
 
 const API_URL = 'https://dummyjson.com/products';
+
+// Removes the "meta" field from a product object 
+const stripMeta = ({ meta, ...rest }) => rest;
 
 export default function App() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+
+  const [total, setTotal] = useState(0);
+  const [skip, setSkip] = useState(0);
+  const [limit, setLimit] = useState(0);
 
   // POST states
   const [newTitle, setNewTitle] = useState('');
@@ -30,17 +36,23 @@ export default function App() {
   const [updatePrice, setUpdatePrice] = useState('');
   const [updatedProduct, setUpdatedProduct] = useState(null);
 
-  // DELETE state
+  // DELETE states
   const [deleteId, setDeleteId] = useState('');
+  const [deletedProduct, setDeletedProduct] = useState(null);
+
+  // Clears the status text before every request
+  const resetStatus = () => {
+    setError('');
+    setMessage('');
+  };
 
   // GET: Retrieve products
   const getProducts = async () => {
     setLoading(true);
-    setError('');
-    setMessage('');
+    resetStatus();
 
     try {
-      const response = await fetch(API_URL); // fetching the products from the API
+      const response = await fetch(API_URL);
 
       if (!response.ok) {
         throw new Error('Failed to retrieve products.');
@@ -48,11 +60,10 @@ export default function App() {
 
       const data = await response.json();
 
-      const cleanProducts = data.products.map( // removing the meta field from each product object
-        ({ meta, ...product }) => product
-      );
-
-      setProducts(cleanProducts);
+      setProducts(data.products.map(stripMeta));
+      setTotal(data.total);
+      setSkip(data.skip);
+      setLimit(data.limit);
     } catch (err) {
       setError(err.message || 'Something went wrong.');
     } finally {
@@ -63,21 +74,19 @@ export default function App() {
   // POST: Create a product
   const addProduct = async () => {
     if (!newTitle.trim() || !newPrice.trim()) {
-      setMessage('Please enter a product title and price.');
+      setError('Please enter a product title and price.');
       return;
     }
 
     const price = Number(newPrice);
 
     if (!Number.isFinite(price) || price < 0) {
-      setMessage('Please enter a valid price.');
+      setError('Please enter a valid price.');
       return;
     }
-    
-    // Set loading state and clear previous messages
+
     setLoading(true);
-    setError('');
-    setMessage('');
+    resetStatus();
     setCreatedProduct(null);
 
     try {
@@ -98,9 +107,12 @@ export default function App() {
         throw new Error(data.message || 'Failed to create product.');
       }
 
-      const { meta, ...product } = data;
+      const product = stripMeta(data);
 
       setCreatedProduct(product);
+      // The API does not save it permanently, so add it to the displayed list locally
+      setProducts((currentProducts) => [product, ...currentProducts]);
+      setTotal((current) => current + 1);
       setMessage('Product created successfully!');
       setNewTitle('');
       setNewPrice('');
@@ -114,31 +126,23 @@ export default function App() {
   // PATCH: Update selected product fields
   const updateProduct = async () => {
     if (!updateId.trim()) {
-      setMessage('Please enter a product ID.');
-      return;
-    }
-
-    if (!updateTitle.trim() && !updatePrice.trim()) {
-      setMessage('Enter a new title or price.');
+      setError('Please enter a product ID.');
       return;
     }
 
     const id = Number(updateId);
 
     if (!Number.isInteger(id) || id < 1) {
-      setMessage('Please enter a valid product ID.');
+      setError('Please enter a valid product ID.');
       return;
     }
 
-    if (updatePrice.trim() !== '') {
-      const price = Number(updatePrice);
-
-      if (!Number.isFinite(price) || price < 0) {
-        setMessage('Please enter a valid price.');
-        return;
-      }
+    if (!updateTitle.trim() && !updatePrice.trim()) {
+      setError('Enter a new title or price.');
+      return;
     }
 
+    // Only send the fields that were filled in
     const changes = {};
 
     if (updateTitle.trim()) {
@@ -146,12 +150,18 @@ export default function App() {
     }
 
     if (updatePrice.trim() !== '') {
-      changes.price = Number(updatePrice);
+      const price = Number(updatePrice);
+
+      if (!Number.isFinite(price) || price < 0) {
+        setError('Please enter a valid price.');
+        return;
+      }
+
+      changes.price = price;
     }
 
     setLoading(true);
-    setError('');
-    setMessage('');
+    resetStatus();
     setUpdatedProduct(null);
 
     try {
@@ -169,12 +179,14 @@ export default function App() {
         throw new Error(data.message || 'Failed to update product.');
       }
 
-      const { meta, ...product } = data;
+      const product = stripMeta(data);
 
       setUpdatedProduct(product);
-      setMessage('Product updated successfully!');
+      setMessage('Product updated successfully! (simulated by the API)');
+      setUpdateTitle('');
+      setUpdatePrice('');
 
-      // Update the displayed list locally
+      // The API does not save changes, so update the displayed list locally
       setProducts((currentProducts) =>
         currentProducts.map((item) =>
           item.id === product.id ? { ...item, ...product } : item
@@ -190,67 +202,95 @@ export default function App() {
   // DELETE: Remove a product
   const deleteProduct = async () => {
     if (!deleteId.trim()) {
-      setMessage('Please enter a product ID.');
+      setError('Please enter a product ID.');
       return;
     }
 
-  const id = Number(deleteId);
+    const id = Number(deleteId);
 
-  if (!Number.isInteger(id) || id < 1) {
-    setMessage('Please enter a valid product ID.');
-    return;
-  }
-
-  setLoading(true);
-  setError('');
-  setMessage('');
-
-  try {
-    const response = await fetch(`${API_URL}/${id}`, {
-      method: 'DELETE',
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.message || 'Failed to delete product.');
+    if (!Number.isInteger(id) || id < 1) {
+      setError('Please enter a valid product ID.');
+      return;
     }
 
-    // Remove the product from the displayed list
-    setProducts((currentProducts) =>
-      currentProducts.filter((product) => product.id !== id)
-    );
+    setLoading(true);
+    resetStatus();
+    setDeletedProduct(null);
 
-    setMessage(`Product ID ${id} deleted successfully!`);
-    setDeleteId('');
-  } catch (err) {
-    setError(err.message || 'Something went wrong.');
-  } finally {
-    setLoading(false);
-  }
-};
+    try {
+      const response = await fetch(`${API_URL}/${id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete product.');
+      }
+
+      setDeletedProduct(stripMeta(data));
+
+      // The API does not really delete it, so remove it from the displayed list locally
+      setProducts((currentProducts) =>
+        currentProducts.filter((product) => product.id !== id)
+      );
+
+      setTotal((current) => current - 1);
+      setMessage(`Product ID ${id} deleted successfully! (simulated by the API)`);
+      setDeleteId('');
+    } catch (err) {
+      setError(err.message || 'Something went wrong.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     getProducts();
   }, []);
 
-  const renderProduct = ({ item }) => (
-    <View style={styles.card}>
-      <Text style={styles.productId}>ID: {item.id}</Text>
-      <Text style={styles.productTitle}>{item.title}</Text>
-      <Text style={styles.price}>${item.price}</Text>
-      <Text style={styles.detail}>Category: {item.category}</Text>
-      <Text style={styles.detail}>Stock: {item.stock}</Text>
+  // Shows every field of a product except "meta"
+  const renderProduct = ({ item }) => {
+    const product = stripMeta(item);
+
+    return (
+      <View style={styles.card}>
+        <Text style={styles.productTitle}>
+          {product.title || `Product ${product.id}`}
+        </Text>
+
+        {Object.entries(product).map(([key, value]) => {
+          if (key === 'title') {
+            return null;
+          }
+
+          return (
+            <Text key={key} style={styles.detail}>
+              {key}:{' '}
+              {value !== null && typeof value === 'object'
+                ? JSON.stringify(value, null, 2)
+                : String(value)}
+            </Text>
+          );
+        })}
+      </View>
+    );
+  };
+
+  // Shows the raw API response for POST / PATCH / DELETE
+  const renderResult = (label, data) => (
+    <View style={styles.resultCard}>
+      <Text style={styles.productTitle}>{label}</Text>
+      <Text style={styles.detail}>{JSON.stringify(data, null, 2)}</Text>
     </View>
   );
 
-  // Main render
-  return ( 
-  <ScrollView 
-    style={styles.container}
-    contentContainerStyle={styles.contentContainer}
-    keyboardShouldPersistTaps="handled"
-  >
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.title}>Product API Manager</Text>
 
       {loading && <ActivityIndicator size="large" color="#2563eb" />}
@@ -258,6 +298,7 @@ export default function App() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {message ? <Text style={styles.success}>{message}</Text> : null}
 
+      {/* POST */}
       <View style={styles.form}>
         <Text style={styles.formTitle}>POST - Create Product</Text>
 
@@ -276,23 +317,12 @@ export default function App() {
           keyboardType="decimal-pad"
         />
 
-        <Button
-          title="Create Product"
-          onPress={addProduct}
-          disabled={loading}
-        />
+        <Button title="Create Product" onPress={addProduct} disabled={loading} />
 
-        {createdProduct && (
-          <View style={styles.resultCard}>
-            <Text style={styles.productTitle}>{createdProduct.title}</Text>
-            <Text>ID: {createdProduct.id}</Text>
-            <Text>Price: ${createdProduct.price}</Text>
-            <Text>API Response:</Text>
-            <Text>{JSON.stringify(createdProduct, null, 2)}</Text>
-          </View>
-        )}
+        {createdProduct && renderResult('POST API Response', createdProduct)}
       </View>
 
+      {/* PATCH */}
       <View style={styles.form}>
         <Text style={styles.formTitle}>PATCH - Update Product</Text>
 
@@ -319,24 +349,12 @@ export default function App() {
           keyboardType="decimal-pad"
         />
 
-        <Button
-          title="Update Product"
-          onPress={updateProduct}
-          disabled={loading}
-        />
+        <Button title="Update Product" onPress={updateProduct} disabled={loading} />
 
-        {updatedProduct && (
-          <View style={styles.resultCard}>
-            <Text style={styles.productTitle}>{updatedProduct.title}</Text>
-            <Text>ID: {updatedProduct.id}</Text>
-            <Text>Price: ${updatedProduct.price}</Text>
-            <Text>API Response:</Text>
-            <Text>{JSON.stringify(updatedProduct, null, 2)}</Text>
-          </View>
-        )}
+        {updatedProduct && renderResult('PATCH API Response', updatedProduct)}
       </View>
 
-            {/* DELETE Form */}
+      {/* DELETE */}
       <View style={styles.form}>
         <Text style={styles.formTitle}>DELETE - Remove Product</Text>
 
@@ -354,25 +372,32 @@ export default function App() {
           disabled={loading}
           color="#dc2626"
         />
+
+        {deletedProduct && renderResult('DELETE API Response', deletedProduct)}
       </View>
 
+      {/* GET */}
       <View style={styles.listHeader}>
-        <Text style={styles.formTitle}>Product List</Text>
-        <Button
-          title="GET - Reload"
-          onPress={getProducts}
-          disabled={loading}
-        />
+        <Text style={styles.formTitle}>GET - Product List</Text>
+        <Button title="Reload" onPress={getProducts} disabled={loading} />
       </View>
 
+      <View style={[styles.card, styles.summaryCard]}>
+        <Text style={styles.formTitle}>API Response Summary</Text>
+        <Text style={styles.detail}>Total Products: {total}</Text>
+        <Text style={styles.detail}>Skip: {skip}</Text>
+        <Text style={styles.detail}>Limit: {limit}</Text>
+      </View>
+
+      {/* for listing products */}
       <FlatList
-          data={products}
-          keyExtractor={(item) => String(item.id)}
-          renderItem={renderProduct}
-          contentContainerStyle={styles.list}
-          scrollEnabled={false}
-        />
-      </ScrollView>
+        data={products}
+        keyExtractor={(item, index) => `${item.id}-${index}`} 
+        renderItem={renderProduct}
+        contentContainerStyle={styles.list}
+        scrollEnabled={false}
+      />
+    </ScrollView>
   );
 }
 
@@ -380,7 +405,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f1f5f9',
-    paddingTop: 45,
   },
   contentContainer: {
     paddingTop: 45,
@@ -423,20 +447,13 @@ const styles = StyleSheet.create({
     borderColor: '#e2e8f0',
     borderRadius: 8,
   },
-  productId: {
-    color: '#64748b',
-    fontSize: 12,
+  summaryCard: {
+    marginHorizontal: 15,
   },
   productTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     marginVertical: 5,
-  },
-  price: {
-    color: '#15803d',
-    fontSize: 19,
-    fontWeight: 'bold',
-    marginVertical: 4,
   },
   detail: {
     color: '#475569',
