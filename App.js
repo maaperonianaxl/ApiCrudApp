@@ -234,21 +234,15 @@ export default function App() {
     getProducts();
   }, []);
 
-  const renderProduct = ({ item }) => {
-  const { meta, ...product } = item;
-
-  return (
+  const renderProduct = ({ item }) => (
     <View style={styles.card}>
-      {Object.entries(product).map(([key, value]) => (
-        <Text key={key} style={styles.detail}>
-          {key}: {typeof value === 'object' && value !== null
-            ? JSON.stringify(value)
-            : String(value)}
-        </Text>
-      ))}
+      <Text style={styles.productId}>ID: {item.id}</Text>
+      <Text style={styles.productTitle}>{item.title}</Text>
+      <Text style={styles.price}>${item.price}</Text>
+      <Text style={styles.detail}>Category: {item.category}</Text>
+      <Text style={styles.detail}>Stock: {item.stock}</Text>
     </View>
   );
-};
 
   // Main render
   return ( 
